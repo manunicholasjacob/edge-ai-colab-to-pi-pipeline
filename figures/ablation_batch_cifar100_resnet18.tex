@@ -1,0 +1,15 @@
+\begin{table}
+\caption{Batch scaling (CIFAR-100 • ResNet-18), threads=4.}
+\label{tab:batch_cifar100_resnet18}
+\begin{tabular}{rrrrrr}
+\toprule
+Batch & Mean (ms) & p50 (ms) & p90 (ms) & Img/s & Acc (%) \\
+\midrule
+1 & 10.540 & 10.316 & 10.915 & 93.720 & 60.810 \\
+1 & 10.457 & 10.393 & 10.525 & 94.878 & 60.810 \\
+1 & 10.656 & 10.612 & 10.733 & 93.974 & 60.810 \\
+2 & 9.049 & 9.016 & 9.092 & 109.973 & 60.810 \\
+4 & 8.424 & 8.381 & 8.435 & 118.565 & 60.810 \\
+\bottomrule
+\end{tabular}
+\end{table}

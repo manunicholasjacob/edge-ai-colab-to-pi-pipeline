@@ -1,0 +1,2 @@
+MIT License for code
+CC-BY-4.0 for documentation and plots

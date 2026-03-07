@@ -1,0 +1,15 @@
+\begin{table}
+\caption{Batch scaling (SVHN • ResNet-18), threads=4.}
+\label{tab:batch_svhn_resnet18}
+\begin{tabular}{rrrrrr}
+\toprule
+Batch & Mean (ms) & p50 (ms) & p90 (ms) & Img/s & Acc (%) \\
+\midrule
+1 & 10.840 & 10.645 & 11.175 & 92.397 & 96.059 \\
+1 & 9.976 & 9.933 & 10.041 & 99.952 & 96.059 \\
+1 & 10.185 & 10.118 & 10.246 & 98.631 & 96.059 \\
+2 & 9.356 & 9.312 & 9.387 & 106.814 & 96.059 \\
+4 & 8.374 & 8.339 & 8.389 & 118.414 & 96.059 \\
+\bottomrule
+\end{tabular}
+\end{table}

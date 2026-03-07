@@ -1,0 +1,22 @@
+{
+ "$schema": "http://json-schema.org/draft-07/schema#",
+ "type": "object",
+ "required": ["dataset", "arch", "classes", "image_size", "mean", "std", "opset", "artifacts"],
+ "properties": {
+   "dataset": {"enum": ["cifar100", "svhn"]},
+   "arch": {"enum": ["mobilenet_v3_small", "resnet18"]},
+   "image_size": {"type": "array", "minItems": 2},
+   "mean": {"type": "array", "minItems": 3},
+   "std": {"type": "array", "minItems": 3},
+   "opset": {"type": "integer"},
+   "training": {"type": "object"},
+   "artifacts": {
+     "type": "object",
+     "required": ["onnx_fp32"],
+     "properties": {
+       "onnx_fp32": {"type": "string"},
+       "onnx_int8": {"type": ["string", "null"]}
+     }
+   }
+ }
+}

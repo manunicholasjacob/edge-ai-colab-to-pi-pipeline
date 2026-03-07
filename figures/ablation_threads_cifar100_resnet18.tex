@@ -1,0 +1,15 @@
+\begin{table}
+\caption{Thread scaling (CIFAR-100 • ResNet-18), batch=1.}
+\label{tab:threads_cifar100_resnet18}
+\begin{tabular}{rrrrrr}
+\toprule
+Threads & Mean (ms) & p50 (ms) & p90 (ms) & Img/s & Acc (%) \\
+\midrule
+1 & 11.338 & 11.303 & 11.402 & 87.719 & 60.810 \\
+2 & 7.351 & 7.288 & 7.379 & 134.117 & 60.810 \\
+4 & 10.540 & 10.316 & 10.915 & 93.720 & 60.810 \\
+4 & 10.457 & 10.393 & 10.525 & 94.878 & 60.810 \\
+4 & 10.656 & 10.612 & 10.733 & 93.974 & 60.810 \\
+\bottomrule
+\end{tabular}
+\end{table}

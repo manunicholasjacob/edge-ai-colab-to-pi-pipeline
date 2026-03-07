@@ -1,0 +1,15 @@
+\begin{table}
+\caption{Thread scaling (CIFAR-100 • MobileNetV3-S), batch=1.}
+\label{tab:threads_cifar100_mobilenet_v3_small}
+\begin{tabular}{rrrrrr}
+\toprule
+Threads & Mean (ms) & p50 (ms) & p90 (ms) & Img/s & Acc (%) \\
+\midrule
+1 & 2.147 & 2.122 & 2.254 & 447.192 & 45.780 \\
+2 & 2.062 & 2.042 & 2.145 & 463.790 & 45.780 \\
+4 & 2.169 & 2.122 & 2.365 & 450.675 & 45.780 \\
+4 & 2.434 & 2.226 & 2.609 & 434.858 & 45.780 \\
+4 & 2.180 & 2.118 & 2.364 & 441.163 & 45.780 \\
+\bottomrule
+\end{tabular}
+\end{table}

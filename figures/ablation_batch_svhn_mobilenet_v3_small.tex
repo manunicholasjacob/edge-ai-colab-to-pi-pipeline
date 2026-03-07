@@ -1,0 +1,15 @@
+\begin{table}
+\caption{Batch scaling (SVHN • MobileNetV3-S), threads=4.}
+\label{tab:batch_svhn_mobilenet_v3_small}
+\begin{tabular}{rrrrrr}
+\toprule
+Batch & Mean (ms) & p50 (ms) & p90 (ms) & Img/s & Acc (%) \\
+\midrule
+1 & 2.125 & 2.051 & 2.322 & 456.216 & 93.251 \\
+1 & 2.020 & 2.013 & 2.073 & 483.604 & 93.251 \\
+1 & 2.061 & 2.055 & 2.108 & 474.167 & 93.251 \\
+2 & 1.666 & 1.665 & 1.686 & 590.457 & 93.251 \\
+4 & 1.361 & 1.359 & 1.373 & 723.971 & 93.251 \\
+\bottomrule
+\end{tabular}
+\end{table}

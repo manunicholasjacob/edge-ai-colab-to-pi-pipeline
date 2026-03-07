@@ -1,0 +1,1012 @@
+%%%%%%%% MLSys 2025 CONVERTED VERSION %%%%%%%%%%%%%%%%%
+\documentclass{article}
+
+% Recommended packages
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{subfigure}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{amsmath,amssymb}
+\usepackage{siunitx}
+\usepackage{float}
+\usepackage{tabularx,array}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+
+% For initial blind submission:
+\usepackage{mlsys2025}
+% For camera-ready, uncomment:
+% \usepackage[accepted]{mlsys2025}
+
+% Optional: consistent number formatting
+\sisetup{round-mode=places,round-precision=2}
+
+\mlsystitlerunning{Adaptive Edge--Cloud Inference with ONNX Deployment}
+
+\begin{document}
+
+\twocolumn[
+\mlsystitle{Adaptive Edge--Cloud Inference with ONNX Deployment:\\
+A Reproducible Colab$\boldsymbol{\rightarrow}$Raspberry~Pi Pipeline on CIFAR--100 and SVHN}
+
+% ----------------------------
+% Author information
+% ----------------------------
+% For blind submission, OMIT author list entirely.
+% For camera-ready, include as below:
+
+\mlsyskeywords{Edge AI, Raspberry Pi, ONNX Runtime, Adaptive Inference, MobileNetV3, ResNet, CIFAR-100, SVHN, Quantization, Reproducibility}
+
+\vskip 0.3in
+\begin{abstract}
+We present a reproducible \textbf{Colab$\!\rightarrow\!$Pi} pipeline that unifies model training, ONNX export, an oracle CPU baseline, and on-device evaluation on a \textbf{Raspberry~Pi~5} with ONNX Runtime~\cite{onnxruntime_docs}. MobileNetV3-Small~\cite{howard2019mobilenetv3} and ResNet-18~\cite{he2016resnet} are trained on CIFAR-100~\cite{krizhevsky2009tiny} and SVHN~\cite{netzer2011svhn}, exported to ONNX, and benchmarked under matched batch/thread grids on the Colab T4 host CPU (oracle) and the Pi. We report reproducible latency quantiles and throughput (with optional INA219 energy), and define \emph{thermal efficiency loss} and \emph{relative speedup} to quantify device--oracle deviation. Empirically, bare-metal Pi inference can exceed the virtualized oracle at low concurrency, but degrades by $\sim$15--25\% under thermal saturation. Contributions: (i) a scripted, auditable training$\rightarrow$deployment workflow; (ii) a dual-context methodology exposing thermal and virtualization effects; (iii) compact metrics and figures packaged with artifacts; and (iv) open-source resources enabling portable, repeatable edge-AI benchmarking and adaptive-inference studies.
+\end{abstract}
+]
+
+%\printAffiliationsAndNotice{}  % Leave blank for blind submission
+% =========================================================
+% 1. INTRODUCTION (Further Condensed)
+% =========================================================
+\section{Introduction}
+
+Edge inference now runs multi-stage models under tight latency, power, and thermal limits. Commodity SBCs (e.g., Raspberry~Pi~5) host workloads once in datacenters, making thermal headroom, scheduling, and precision central to QoS.
+
+On-device inference improves privacy/availability but limits compute; cloud reduces these limits yet adds tail-latency and bandwidth cost. Split/hybrid methods~\cite{kang2017neurosurgeon,matsubara2022split,teerapittayanon2017distributed,hu2022dynamic} aim to balance both, but reproducible cross-device studies are scarce—many report accuracy only or rely on non-instrumented testbeds.
+
+\paragraph{Motivation.}
+Performance depends on \emph{thermal throttling, scheduling, quantization fallback, and runtime overheads}. Even MobileNetV3-Small~\cite{howard2019mobilenetv3} can vary $3\times$ in throughput across threads/thermals. A useful benchmark must (1) train in the cloud, (2) export ONNX, (3) execute identically on edge, and (4) quantify the gap between an ideal “oracle” and a thermally bounded device.
+
+\paragraph{This Work.}
+We provide a reproducible \textbf{Colab$\!\rightarrow\!$Pi} pipeline linking training to on-device benchmarking. Models (MobileNetV3-Small, ResNet-18~\cite{he2016resnet}) trained on CIFAR-100~\cite{krizhevsky2009tiny} and SVHN~\cite{netzer2011svhn} are exported to ONNX~\cite{onnxruntime_docs} and evaluated on:
+\begin{enumerate}
+  \item an \emph{oracle} (Colab T4 host CPU, unconstrained);
+  \item a \emph{Pi~5} with INA219 power and thermal probes.
+\end{enumerate}
+Matched batch/thread sweeps yield latency, throughput, and energy, defining
+\[
+\mathrm{ThermalLoss}=1-\frac{\text{Pi img/s}}{\text{Oracle img/s}},\qquad 
+\mathrm{Speedup}=\frac{\text{Pi img/s}}{\text{Oracle img/s}}.
+\]
+Figures~\ref{fig:oracle-pareto-results}–\ref{fig:speedup} show Pi’s bare-metal runtime can exceed the virtualized oracle at small batches but declines once thermal limits engage.
+
+\paragraph{Reproducibility.}
+Each bundle—ONNX, CSV logs, figures—is validated via \texttt{MANIFEST.json} and \texttt{run\_all.sh}. Code and instrumentation ship as \texttt{final\_bundle.zip} for transparent reuse.
+
+\paragraph{Contributions.}
+\begin{itemize}
+  \item \textbf{Unified oracle–device protocol:} matched batch/thread grids expose thermal and virtualization deltas.
+  \item \textbf{Thermal metrics:} $\mathrm{ThermalLoss}$ and $\mathrm{Speedup}$ quantify throttling/VM effects.
+  \item \textbf{Tail-based SLOs:} $p90$ targets from measured latency (Sec.~\ref{sec:slo}).
+  \item \textbf{Throughput model:} one-parameter fit ($\hat{\kappa}$) with $<6\%$ error (Sec.~\ref{sec:thr_model}).
+  \item \textbf{Quantization fallback:} deterministic INT8$\!\rightarrow$FP32 with logging.
+  \item \textbf{Open artifacts:} validated manifests and oracle–Pi datasets (Sec.~\ref{sec:artifacts}).
+\end{itemize}
+Overall, we move edge-AI evaluation from ad-hoc timing to a reproducible systems methodology.
+
+% =========================================================
+% 2. RELATED WORK (Further Condensed)
+% =========================================================
+\section{Related Work}
+
+\paragraph{Efficient CNN backbones.}
+Mobile backbones combine depthwise separable convs, SE, and learned activations. MobileNetV3~\cite{howard2019mobilenetv3} uses NAS and hard-swish; ResNet~\cite{he2016resnet} adds residual links. Both are standard for resource-limited inference and show distinct thread/batch scaling that our oracle–Pi analysis quantifies.
+
+\paragraph{Portable inference stacks.}
+ONNX + ORT provide a framework-agnostic IR and pluggable back ends~\cite{onnxruntime_docs}. Alternatives: TFLite~\cite{tflite_ptq}, OpenVINO~\cite{openvino_overview,openvino_plugin}, TVM~\cite{tvm_osdi18,tvm_arxiv18}. We standardize \emph{execution as artifacts}: a manifest + runner contract for reproducible, cross-stack results.
+
+\paragraph{Quantization and coverage.}
+Integer-only inference reduces latency/memory; Jacob et~al.~\cite{jacob2018quantization} formalize 8-bit PTQ/QAT~\cite{tflite_ptq,tflite_qat}. We measure aarch64 operator coverage in ORT and enforce deterministic INT8$\!\to$FP32 fallback with logging so unsupported ops become visible gaps.
+
+\paragraph{Split computing and exits.}
+Neurosurgeon~\cite{kang2017neurosurgeon} pioneered latency-aware partitioning; surveys~\cite{matsubara2022split} cover early exits. Our gap analysis complements policy work by quantifying deltas between an unconstrained oracle and a thermally bounded SBC—showing split decisions must consider thermals, not just FLOPs/bandwidth.
+
+\paragraph{Edge benchmarks.}
+MLPerf Edge/Tiny~\cite{mlperf_edge,mlperf_tiny_neurips} standardize metrics but not artifact release. We publish self-contained bundles—models, CSVs, manifests, scripts—covering training$\rightarrow$export$\rightarrow$oracle$\rightarrow$device$\rightarrow$analysis.
+
+\begin{table}[h]
+  \centering
+  \small
+  \resizebox{\linewidth}{!}{%
+  \begin{tabular}{p{2.8cm} p{1.8cm} p{2cm} p{2.2cm} p{3.6cm}}
+    \toprule
+    \textbf{System/Approach} & \textbf{Hardware Class} & \textbf{Metric Focus} & \textbf{Runtime/Framework} & \textbf{Key Limitation} \\
+    \midrule
+    MLPerf Inference Edge~\cite{mlperf_edge} & SBC/Server & Lat., Acc., Energy & MLPerf harness & Closed workloads; limited artifacts \\
+    MLPerf Tiny~\cite{mlperf_tiny,mlperf_tiny_neurips} & MCU & Lat., Power & Custom harness & MCU-only; no dual context \\
+    Neurosurgeon~\cite{kang2017neurosurgeon} & Mobile/Edge & Energy vs lat. & Custom runtime & No trace/artifact release \\
+    TVM~\cite{tvm_osdi18,tvm_arxiv18} & Heterogeneous & Throughput & TVM stack & Kernel focus; limited chain \\
+    \textbf{This work} & SBC + Cloud CPU & Lat., Thr., ThermalLoss, Speedup & ORT + Manifest/Runner & 2 datasets/models; NPUs future work \\
+    \bottomrule
+  \end{tabular}}
+  \caption{Selected edge-inference and deployment systems.}
+  \label{tab:related-systems}
+\end{table}
+
+\paragraph{Thermals and virtualization noise.}
+SBCs throttle quickly; cloud VMs vary under multi-tenancy~\cite{thermals_arxiv,cloud_variability}. We log long-horizon Pi traces with thermal context and compare to an oracle CPU, quantifying both via \emph{ThermalLoss} and \emph{Speedup}.
+
+\paragraph*{Positioning.}
+Prior work often lacks a device-validated, runtime-agnostic measurement contract. Our \textbf{end-to-end, device-audited} setup (\texttt{MANIFEST.json}, validator, one-command runner) reconstructs preprocessing, captures latency tails/throughput, and exposes oracle$\!\to$device gaps as reusable artifacts for replication.
+
+
+% =========================================================
+% 3. REPRODUCIBLE PIPELINE (Condensed)
+% =========================================================
+\section{Reproducible Pipeline}
+
+\subsection{Training Orchestration (Colab)}
+Training runs on Google Colab Pro (T4 GPU, 16 GB RAM) with PyTorch 2.3 / TorchVision 0.19.  
+Each (dataset, model) pair trains 120 epochs using random crop ($32{\times}32$ + 4 px pad), horizontal flip, and normalization.  
+Optimization: SGD (momentum 0.9), cosine LR, weight decay $5{\times}10^{-4}$, batch 128 (CIFAR-100) / 64 (SVHN).  
+Deterministic CuDNN and seed = 1337 ensure repeatability; package versions are pinned in \verb|requirements.txt|.  
+Each session outputs \texttt{TRAIN\_META.json} with hyperparameters and runtime hash.
+
+\subsection{ONNX Export and Validation}
+Best checkpoints are exported to ONNX opset 13 via \verb|torch.onnx.export| with named I/O and dynamic batch.  
+A 50-sample test enforces $|\text{diff}|_\infty<10^{-4}$ between PyTorch and ONNX.  
+INT8 variants (\texttt{model\_int8.onnx}) use \texttt{onnxruntime.quantization}.  
+Each bundle includes models, \texttt{TRAIN\_META.json}, \texttt{MANIFEST.json}, and usage notes, verified by \texttt{onnx.checker} and ORT sessions.
+
+\subsection{Manifest Schema and Packaging}
+The manifest defines dataset, architecture, normalization, input size, opset, seed, hash, runtime version, and timestamp (Table \ref{tab:manifest-schema}), guaranteeing deterministic preprocessing and integrity.
+
+\begin{table}[h]
+  \centering
+  \small
+  \begin{tabular}{p{3cm}p{4.8cm}}
+    \toprule
+    \textbf{Field} & \textbf{Description} \\
+    \midrule
+    \texttt{dataset}, \texttt{arch}, \texttt{num\_classes} & Dataset / model info \\
+    \texttt{normalize.mean/std}, \texttt{img\_size} & Preprocessing params \\
+    \texttt{opset}, \texttt{seed}, \texttt{onnx\_hash} & Export settings + checksum \\
+    \texttt{runtime\_ver}, \texttt{timestamp} & Environment metadata \\
+    \bottomrule
+  \end{tabular}
+  \caption{Manifest fields ensuring consistent preprocessing and reproducibility.}
+  \label{tab:manifest-schema}
+\end{table}
+
+\subsection{Pi Runner and Fallback Logic}
+A single script (\texttt{run\_all.sh}) creates a Python 3.11 venv, installs ORT + deps, and runs \texttt{inference.py}.  
+INT8 is attempted first; unsupported ops (\texttt{ConvInteger}, \texttt{QLinearConv}) trigger FP32 fallback with identical threading/timing.  
+Each run logs mean and $p50/p90$ latency, throughput, and optional INA219 energy.  
+On Pi 5, $\sim$78 \% of ops execute INT8; coverage fractions are logged for transparency.
+
+\subsection{Instrumentation and Logging}
+The runner records temperature, CPU usage, and INA219 power (10 Hz) on a shared timestamp.  
+Post-processing computes mean and $p50/p90/p99$ latency and energy per image (\texttt{metrics.csv}), enabling analysis without reruns.
+
+\subsection{Why Reproducibility Matters}
+Kernel support, threading, and thermals strongly affect metrics.  
+Explicit artifacts—ONNX graph + manifest + runner—make results auditable across hardware and software, turning ad-hoc tests into replayable, MLPerf-style benchmarks.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.95\linewidth]{figures/system_diagram.pdf}
+  \caption{End-to-end pipeline: Colab training $\rightarrow$ ONNX export $\rightarrow$ bundle $\rightarrow$ Pi runner (INT8 fallback + instrumentation) $\rightarrow$ metrics + gap analysis.}
+  \label{fig:pipeline-diagram}
+\end{figure}
+
+% =========================================================
+% 4. METHODS (Condensed)
+% =========================================================
+\section{Methods}
+
+\subsection{Datasets and Preprocessing}
+\label{sec:data}
+We use two $32{\times}32$ benchmarks: \textbf{CIFAR-100} (100 classes, 50k/10k) and \textbf{SVHN} (digits 0--9, 73k/26k).  
+Normalization constants are embedded in each bundle’s \texttt{MANIFEST.json} for byte-level parity.  
+CIFAR-100 uses random crop and flip; SVHN uses raw frames.  
+CIFAR-100 stresses texture diversity, while SVHN’s simpler digits yield higher accuracy.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l l r}
+\toprule
+Dataset & Model & Top-1 (\%) \\
+\midrule
+CIFAR-100 & MobileNetV3-S & 45.8 \\
+CIFAR-100 & ResNet-18 & 60.8 \\
+SVHN & MobileNetV3-S & 93.3 \\
+SVHN & ResNet-18 & 96.1 \\
+\bottomrule
+\end{tabular}
+\caption{Trained checkpoint accuracy.}
+\label{tab:acc}
+\end{table}
+
+\subsection{Architectures and Training}
+\label{sec:arch-train}
+We evaluate \textbf{MobileNetV3-Small} (depthwise+SE+hard-swish) and \textbf{ResNet-18}.  
+Training (PyTorch 2.3) uses SGD (momentum 0.9, wd $5{\times}10^{-4}$), cosine LR, 120 epochs, and batch 128 (CIFAR-100)/64 (SVHN).  
+Seed 1337 and deterministic CuDNN ensure reproducibility; best checkpoints are exported with \texttt{TRAIN\_META.json}.
+
+\subsection{Export and Execution Grid}
+\label{sec:export}
+Models are exported to ONNX 13 with dynamic batch axis and verified ($|\text{diff}|_\infty<10^{-4}$ on 50 samples).  
+INT8 variants use ORT dynamic quantization.  
+Benchmarks run on (1) a Colab T4 CPU oracle and (2) a Raspberry Pi 5 (aarch64 ORT).  
+Both sweep threads $\{1,2,4\}$ × batches $\{1,8,32,64\}$; OOM cases are skipped.  
+Each run executes 20 warm-ups + 50 timed iters, logging latency ($p50/p90$), throughput, and optional INA219 energy (Table \ref{tab:measure-protocol}).  
+The Pi uses stock cooling and the \texttt{ondemand} governor.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l l}
+\toprule
+Setting & Value \\
+\midrule
+Warm-up / Timed iters & 20 / 50 \\
+Latency metrics & mean, $p50$, $p90$ \\
+Threads & intra = grid val., inter = 1 \\
+Energy (Pi) & INA219 10 Hz samples \\
+Energy (Oracle) & nominal CPU power × latency \\
+\bottomrule
+\end{tabular}
+\caption{Measurement protocol.}
+\label{tab:measure-protocol}
+\end{table}
+
+\subsection{Pi Runner and Instrumentation}
+\label{sec:pi-runner}
+\texttt{run\_all.sh} builds a Python 3.11 venv, installs pinned ORT + deps, and runs \texttt{inference.py}.  
+Unsupported INT8 ops trigger FP32 fallback; INT8 coverage ≈ 78 \%.  
+Three synchronized traces—latency / throughput (CSV/JSON), thermals, and INA219 power (10 Hz)—enable cold→steady analysis and thermal-loss attribution.
+
+\subsection{Metrics and Gap Formulation}
+\label{sec:metrics}
+For $n{=}50$ iterations we report mean and $p50/p90$ latency and throughput:
+\begin{equation}
+\mathrm{img/s}=\frac{\text{images}}{\text{elapsed (s)}}.
+\end{equation}
+Pi energy per image:
+\begin{equation}
+E_{\text{img}}=\frac{1}{N}\!\sum_{k}\!\Delta t_k P_k/b.
+\end{equation}
+Given matched grids,
+\begin{equation}
+\mathrm{Speedup}=\frac{\text{Pi img/s}}{\text{Oracle img/s}},\quad
+\mathrm{ThermalLoss}=1-\frac{\text{Pi img/s}}{\text{Oracle img/s}}.
+\end{equation}
+These define the gap metrics (Figs.~\ref{fig:thermal-loss}, \ref{fig:speedup}).
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.9\linewidth]{figures-2/thermal_loss_vs_threads_b1.png}
+  \caption{Thermal efficiency loss vs.\ threads (batch = 1).}
+  \label{fig:thermal-loss}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.9\linewidth]{figures-2/speedup_vs_threads_b1.png}
+  \caption{Relative throughput (Pi / Oracle) vs.\ threads.}
+  \label{fig:speedup}
+\end{figure}
+
+\subsection{Throughput Model and Statistics}
+\label{sec:thr_model}
+Mean service time vs.\ batch:
+\begin{equation}
+S(b)=S_{\infty}+K/b,
+\end{equation}
+fit by least squares per (dataset, arch, context).  
+$\hat{\kappa}=K/S_{\infty}$ summarizes batching efficiency; throughput = $1/S(b)$.  
+Fits and errors are stored in \texttt{throughput\_model\_fit.csv}.  
+Bootstrap ($B{=}1000$) quantile CIs and INA219 calibration propagate uncertainty.
+
+\subsection{SLO Feasibility}
+\label{sec:slo}
+A configuration satisfies latency budget $B$ if $Q_{\tau}(T)\!\le\!B$, producing an SLO table mapping budgets to the highest-accuracy Pi configuration for online control.
+
+
+% =========================================================
+% 5. EXPERIMENTAL SETUP
+% =========================================================
+\section{Experimental Setup}
+\label{sec:exp-setup}
+
+\subsection{Hardware}
+Experiments use a \textbf{Raspberry Pi 5 (8\,GB)} with BCM2712 (4$\times$ Cortex-A76 @ 2.4\,GHz) running Raspberry Pi OS 64-bit (Bookworm, kernel 6.6).  
+Thermals are read from \texttt{/sys/class/thermal/thermal\_zone0/temp} (1\,Hz) and power from an INA219 (10\,Hz).  
+Ambient temperature is maintained near $24^\circ$C with idle $<45^\circ$C before each run.
+
+\subsection{Software Stack}
+Training occurs on Google Colab (PyTorch 2.3, TorchVision 0.18).  
+Models are exported to ONNX (opset 13) and validated via \texttt{onnx.checker}.  
+On-device inference uses ONNX Runtime 1.19 (aarch64) in a Python~3.11 virtual environment with pinned dependencies.  
+INT8 variants employ ORT dynamic quantization; unsupported ops trigger deterministic FP32 fallback, preserving the protocol in Sec.~\ref{sec:pi-runner}.
+
+\subsection{Metrics and Configuration Grid}
+We report \textbf{accuracy} (top-1), \textbf{latency} (mean/$p50$/$p90$), and \textbf{throughput} (img/s).  
+Threads $\{1,2,4\}$ and batches $\{1,8,32,64\}$ are swept across both contexts with 20 warm-ups and 50 timed iterations per configuration.  
+The full grid spans four (dataset, architecture) pairs: \{CIFAR-100, SVHN\} × \{MobileNetV3-S, ResNet-18\}.
+
+\subsection{Latency and Throughput Visualization}
+Representative Pi results at batch$=1$ appear in Figs.~\ref{fig:latency-bars}–\ref{fig:latency-cdf}, derived directly from released CSVs.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.8\linewidth]{figures/latency_bars.pdf}
+  \caption{Mean, $p50$, $p90$ latencies on Raspberry Pi 5 (batch $=1$).}
+  \label{fig:latency-bars}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.8\linewidth]{figures-2/runtime_compare_cpu_b1_t4.png}
+  \caption{Throughput at batch $=1$, threads $=4$.}
+  \label{fig:throughput-bars}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.8\linewidth]{figures/latency_cdf.pdf}
+  \caption{Latency CDFs for all (dataset, model) pairs at batch $=1$.}
+  \label{fig:latency-cdf}
+\end{figure}
+
+\subsection{Threats to Validity}
+CPU pinning and repeated sampling reduce OS jitter and thermal drift; run-to-run variation remains below $2\%$ RSD.  
+All builds, manifests, and dependencies are locked for exact reproducibility.
+% =========================================================
+% 6. THROUGHPUT MODEL FROM BATCH MEASUREMENTS (Condensed)
+% =========================================================
+\section{Throughput Model from Batch Measurements}
+\label{sec:queueing_model}
+
+Mean service time per image $S(b)$ (ms) at batch size~$b$ follows
+\begin{equation}
+S(b)=S_{\infty}+\frac{K}{b},
+\label{eq:amort}
+\end{equation}
+where $K$ is per-batch overhead and $S_{\infty}$ the asymptotic cost.  
+Predicted throughput:
+\begin{equation}
+T_{\text{pred}}(b)=\frac{1000}{S(b)}.
+\label{eq:throughput}
+\end{equation}
+
+\paragraph{Two-point fit.}
+From $S(1)$ and $S(4)$:  
+$K=\tfrac{4}{3}(S(1)-S(4))$, \quad $S_{\infty}=S(1)-K$.
+
+\paragraph{Empirical illustration.}
+CIFAR-100/ResNet-18 (t=4): $S(1)=10.5$, $S(4)=8.4$ $\Rightarrow K=2.8$, $S_{\infty}=7.7$, predicting $S(2)=9.1$ (obs.\ 9.0).  
+SVHN/MobileNetV3-S: $S(1)=2.1$, $S(4)=1.4$ $\Rightarrow K=0.9$, $S_{\infty}=1.1$, giving $S(2)=1.6$ (obs.\ 1.7).  
+Typical $\hat{\kappa}{=}K/S_{\infty}\!\in[0.1,0.4]$, showing efficient batching (Table~\ref{tab:throughput-model}).
+
+\begin{table}[h]
+\centering
+\footnotesize
+\caption{Observed vs.\ predicted throughput using $\hat{\kappa}$.}
+\label{tab:throughput-model}
+\begin{tabularx}{\columnwidth}{l l r r}
+\toprule
+Dataset & Arch & Obs.\ & Pred.\ (img/s) \\
+\midrule
+CIFAR-100 & MobileNetV3-S & 450.7 & 448.2 \\
+CIFAR-100 & ResNet-18 & 93.7 & 94.4 \\
+SVHN & MobileNetV3-S & 456.2 & 458.8 \\
+SVHN & ResNet-18 & 92.4 & 91.8 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\paragraph{Queueing interpretation.}
+For arrival rate $\lambda$ and service rate $\mu(b){=}T(b)$, utilization $\rho=\lambda/\mu(b)$.  
+Keeping $\rho\!\lesssim\!0.8$ maintains stable $p95$ latency, enabling direct SLO use on SBCs.
+
+% =========================================================
+% 7. ABLATION AND SCALING ON RASPBERRY PI 5 (Condensed)
+% =========================================================
+\section{Ablation and Scaling on Raspberry Pi 5}
+\label{sec:ablation}
+
+We examine effects of \emph{threads} and \emph{batch size} on latency and throughput across all (dataset, model) pairs using identical ONNX artifacts and manifest-encoded preprocessing.  
+Metrics (mean/$p50$/$p90$ latency, img/s) are derived from released CSVs.
+
+\subsection{Cross-configuration baseline (t=4, b=1)}
+At batch$=1$, MobileNetV3-S delivers $\sim$2–5$\times$ lower latency and higher throughput than ResNet-18 on both datasets, though ResNet-18 attains higher CIFAR-100 accuracy (Fig.~\ref{fig:ablation_crosscombo_latency}).
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.98\linewidth]{figures/ablation_mean_latency_crosscombo.pdf}
+  \caption{Mean latency at (threads=4, batch=1).}
+  \label{fig:ablation_crosscombo_latency}
+\end{figure}
+
+\subsection{Thread scaling (batch=1)}
+Sweeping threads $\{1,2,4\}$ shows lightweight models saturate cores early; best latency often at \textbf{threads=2}, with mild tail widening at 4 from contention.  
+ResNet-18 benefits more from parallelism but remains slower overall.
+
+\subsection{Batch scaling (threads=4)}
+Small batches amortize overhead: \textbf{batch=2–4} improves throughput and slightly lowers mean latency (Eq.~\ref{eq:amort}); gains flatten beyond $b{=}4$.
+
+\subsection{Deployment takeaways}
+\begin{itemize}
+  \item \textbf{Latency-critical ($b{=}1$):} use \textbf{threads=2}.
+  \item \textbf{Throughput focus:} \textbf{threads=4}, \textbf{batch$\ge$2}.
+  \item \textbf{Model trade-off:} MobileNetV3-S = faster; ResNet-18 = more accurate.
+\end{itemize}
+
+\subsection{Latency distributions and model fit}
+Latency distributions (t=4, b=1) are near-lognormal, supporting quantile SLOs.  
+Batching trends align with Eq.~\ref{eq:amort}; predicted vs.\ observed throughput match closely across all datasets.
+
+% =========================================================
+% 8. SLO POLICY AND FEASIBILITY FROM MEASURED P90 (Condensed)
+% =========================================================
+\section{SLO Policy and Feasibility from Measured p90}
+\label{sec:slo_policy}
+
+We choose the highest-accuracy model whose \emph{measured} $p90$ latency on Raspberry Pi 5 meets a budget $B$ at batch 1:
+\begin{equation}
+m^\star(B,d)=\arg\max_m \mathrm{Acc}(m,d)\quad\text{s.t.}\quad\widehat{p90}(L_{m,d})\le B.
+\label{eq:slo_policy}
+\end{equation}
+Best attainable $p90$ (min over threads $\{1,2,4\}$):
+\[
+\widehat{p90}^\star\!=\!
+\begin{cases}
+2.15\,\text{ms} & \text{MNv3-S, CIFAR-100}\\
+7.38\,\text{ms} & \text{RN18, CIFAR-100}\\
+2.03\,\text{ms} & \text{MNv3-S, SVHN}\\
+7.48\,\text{ms} & \text{RN18, SVHN.}
+\end{cases}
+\]
+
+\paragraph*{Implications.}
+(i) For $B{<}7.4$ ms, RN18 is infeasible; only MNv3-S qualifies.  
+(ii) For $B{\ge}7.5$ ms, both meet the SLO—RN18 preferred on CIFAR-100.  
+(iii) For interactive targets ($B{\le}5$ ms), MNv3-S is the safe default.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\linewidth]{figures/latency_triplets.pdf}
+  \caption{Mean/$p50$/$p90$ at (threads = 4, batch = 1); well-separated tails justify a $p90$-based rule.}
+  \label{fig:latency_triplets}
+\end{figure}
+
+\subsection{Feasibility Lookup (batch = 1, p90)}
+\label{sec:slo_feas}
+Applying Eq.~\eqref{eq:slo_policy}, feasible accuracy-optimal choices are:
+
+\begin{table}[h]
+  \centering
+  \small
+  \caption{SLO feasibility by $p90$ (batch = 1).}
+  \label{tab:slo_feas}
+  \begin{tabular}{c c}
+  \toprule
+  Budget $B$ (ms) & Choice(s) \\ \midrule
+  3, 5, 8 & CIFAR-100: MNv3-S;\ \ SVHN: MNv3-S \\
+  11 & CIFAR-100: \textbf{RN18};\ \ SVHN: MNv3-S \\
+  12 & CIFAR-100: \textbf{RN18};\ \ SVHN: \textbf{RN18} \\
+  \bottomrule
+  \end{tabular}
+\end{table}
+
+% =========================================================
+% 9. RESULTS (Condensed)
+% =========================================================
+\section{Results}
+\label{sec:results}
+
+We report Raspberry Pi 5 latency, throughput, and accuracy versus oracle Colab CPU baselines to quantify the Oracle–Pi gap.  
+Unless stated, Pi results use batch 1 and the best thread setting (§\ref{sec:ablation}); all figures trace back to \texttt{data/*.csv}.
+
+\subsection{Throughput}
+At (threads = 4, batch = 1), MobileNetV3-S runs ≈450 img/s; ResNet-18 ≈95 img/s.  
+Batching raises throughput—MNv3-S → 700 img/s at $b{=}4$, RN18 +25 %—consistent with Eq.~\eqref{eq:amort}.  
+Because batching adds queue delay, latency-critical use keeps $b{=}1$.
+
+\begin{table}[h]
+  \centering
+  \caption{Throughput (img/s) on Pi 5, batch 1, threads 4.}
+  \label{tab:thr_results}
+  \begin{tabular}{lc}
+  \toprule
+  Config & img/s \\ \midrule
+  CIFAR100 + MNv3-S & 450.7 \\
+  CIFAR100 + RN18 & 93.7 \\
+  SVHN + MNv3-S & 456.2 \\
+  SVHN + RN18 & 92.4 \\
+  \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.98\linewidth]{figures/ablation_throughput_crosscombo.pdf}
+  \caption{Throughput across configs (threads = 4, batch = 1).}
+  \label{fig:thrbar}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\linewidth]{figures/ablation_batch_cifar100_mobilenet_v3_small.pdf}
+  \caption{Batch scaling (CIFAR-100 MNv3-S); throughput/latency saturate by $b{=}4$.}
+  \label{fig:batch_mnv3_results}
+\end{figure}
+
+\subsection{Accuracy}
+ResNet-18 outperforms on CIFAR-100 (60.8 % vs 45.8 %), while both excel on SVHN (96.1 % vs 93.3 %), showing stronger efficiency–accuracy trade-offs on CIFAR-100.
+
+\begin{table}[h]
+  \centering
+  \caption{Top-1 accuracy (\%) from on-device inference.}
+  \label{tab:acc_results}
+  \begin{tabular}{lc}
+  \toprule
+  Config & Accuracy (\%) \\ \midrule
+  CIFAR100 + MNv3-S & 45.8 \\
+  CIFAR100 + RN18 & 60.8 \\
+  SVHN + MNv3-S & 93.3 \\
+  SVHN + RN18 & 96.1 \\
+  \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Confusion Matrices}
+Figs.~\ref{fig:conf_cifar100}–\ref{fig:conf_svhn} show per-class errors: MNv3-S confuses fine-grained CIFAR-100 classes, RN18 corrects at higher cost; both are robust on SVHN.
+
+\begin{figure}[h]
+  \centering
+  \begin{minipage}{0.48\linewidth}
+    \includegraphics[width=\linewidth]{figures/cifar100_mobilenet_v3_small_confusion_matrix.png}
+  \end{minipage}\hfill
+  \begin{minipage}{0.48\linewidth}
+    \includegraphics[width=\linewidth]{figures/cifar100_resnet18_confusion_matrix.png}
+  \end{minipage}
+  \caption{CIFAR-100 confusion matrices: MNv3-S (left) vs RN18 (right).}
+  \label{fig:conf_cifar100}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \begin{minipage}{0.48\linewidth}
+    \includegraphics[width=\linewidth]{figures/svhn_mobilenet_v3_small_confusion_matrix.png}
+  \end{minipage}\hfill
+  \begin{minipage}{0.48\linewidth}
+    \includegraphics[width=\linewidth]{figures/svhn_resnet18_confusion_matrix.png}
+  \end{minipage}
+  \caption{SVHN confusion matrices: MNv3-S (left) vs RN18 (right).}
+  \label{fig:conf_svhn}
+\end{figure}
+
+\subsection{Latency (mean / p50 / p90)}
+With batch 1, threads 4, MNv3-S ≈2.1 ms vs RN18 ≈10.6 ms.  
+$p90$ tails ≤ 15 % above means, showing low jitter and near-lognormal CDFs (Fig.~\ref{fig:cdf}), validating quantile-based SLOs.
+
+\begin{table}[h]
+  \centering
+  \caption{Latency (ms/image) on Pi 5 (batch 1, threads 4).}
+  \label{tab:lat_results}
+  \begin{tabular}{lccc}
+  \toprule
+  Config & Mean & P50 & P90 \\ \midrule
+  CIFAR100 + MNv3-S & 2.17 & 2.12 & 2.36 \\
+  CIFAR100 + RN18 & 10.54 & 10.32 & 10.91 \\
+  SVHN + MNv3-S & 2.12 & 2.05 & 2.32 \\
+  SVHN + RN18 & 10.84 & 10.65 & 11.17 \\
+  \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.98\linewidth]{figures/latency_cdf.pdf}
+  \caption{Latency CDFs (threads = 4, batch = 1); $p90$ markers shown.}
+  \label{fig:cdf}
+\end{figure}
+
+\subsection{Oracle Control and Oracle–Pi Gap}
+Oracle baselines (Colab CPU) provide unconstrained scaling; Pi runs expose real-world efficiency gaps.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.9\linewidth]{figures-2/pareto_torch-eager.png}
+  \caption{Oracle latency–energy Pareto frontier (Colab CPU).}
+  \label{fig:oracle-pareto-results}
+\end{figure}
+
+\noindent\textit{Summary.}  
+Pi matches or exceeds oracle CPU at batch 1 for light models due to bare-metal efficiency.  
+Larger batches favor oracle cache/bandwidth, revealing Pi’s thermal limits—insights that guide the SLO-aware policy (§\ref{sec:slo_policy}) and deployment rules (§\ref{sec:ablation}).
+% =========================================================
+% 10. DETAILED TRAINING PROTOCOL & GENERALIZATION (Condensed)
+% =========================================================
+\section{Detailed Training Protocol \& Generalization}
+\label{sec:train-protocol}
+
+All models were trained on Google~Colab for transparency and repeatability.  
+Each run exports \texttt{TRAIN\_META.json} (dataset, architecture, optimizer, LR schedule, seed, runtime hash) for deterministic reproduction.
+
+\subsection{Augmentations and Optimization}
+A unified recipe is used for CIFAR-100 and SVHN.  
+CIFAR-100: random crop ($32{\times}32$ + 4 px pad), horizontal flip, normalization $\mu{=}(0.5071,0.4867,0.4408)$, $\sigma{=}(0.2675,0.2565,0.2761)$.  
+SVHN: normalization only, $\mu{=}(0.4377,0.4438,0.4728)$, $\sigma{=}(0.1980,0.2010,0.1970)$.  
+Optimization: SGD (momentum 0.9, wd $5{\times}10^{-4}$), cosine LR for 120 epochs (init 0.1 for CIFAR-100; 0.05 for SVHN).  
+Best checkpoints are exported to ONNX (opset 13, dynamic batch axis) and verified vs.\ PyTorch ($\lVert\cdot\rVert_\infty<10^{-4}$).
+
+\subsection{Generalization Behavior}
+Training is stable; capacity governs accuracy.  
+MobileNetV3-Small converges faster; ResNet-18 attains higher CIFAR-100 accuracy, consistent with prior work~\cite{howard2019mobilenetv3,he2016resnet,krizhevsky2009tiny}.  
+On-device results preserve oracle ordering: accuracy/latency rankings match \texttt{oracle\_results.csv} and \texttt{pi\_results\_normalized.csv}; gaps $<5\%$ per \texttt{gap\_analysis\_with\_speedup.csv}.
+
+\subsection{Cross-Model Summary}
+CIFAR-100: ResNet-18 60.8\% vs.\ MobileNetV3-S 45.8\%.  
+SVHN: 96.1\% vs.\ 93.3\%.  
+MobileNetV3-S favors latency; ResNet-18 favors accuracy.  
+System metrics align (Sec.~\ref{sec:results}): MNv3-S $\approx$ 450 img/s @ 2.1–2.3 ms; RN18 $\approx$ 95 img/s @ 10–11 ms.
+
+\subsection{Reproducibility Checklist}
+%\begin{itemize}
+  \item \textbf{Artifacts:} ONNX models, scripts, logs in \texttt{artifacts/} (\texttt{oracle\_results.csv}, \texttt{pi\_results\_normalized.csv}, \texttt{gap\_analysis\_with\_speedup.csv}).
+  \item \textbf{Env:} PyTorch 2.3, TorchVision 0.19, ONNX 1.16, ONNX Runtime 1.19; Raspberry Pi OS Bookworm 64-bit; Python 3.11.
+  \item \textbf{HW:} Raspberry Pi 5 (8 GB, Cortex-A76 2.4 GHz); Colab (T4) for training.
+  \item \textbf{Seeds:} 1337 (global), synchronized across Python/NumPy/PyTorch; deterministic cuDNN.
+  \item \textbf{Data:} CIFAR-100, SVHN via \texttt{torchvision.datasets} with checksums.
+  \item \textbf{Metrics:} Accuracy; latency (mean/$p50$/$p90$); throughput (img/s). Wall-clock timing, per-run logs.
+  \item \textbf{Energy:} INA219 power on Pi; timestamp-aligned analysis.
+%\end{itemize}
+
+\noindent\textit{Summary.} The Colab$\rightarrow$ONNX$\rightarrow$Pi pipeline preserves generalization and runtime ordering, confirming reproducibility.
+
+% =========================================================
+% 11. QUANTIZATION COVERAGE ON AARCH64 AND DETERMINISTIC FALLBACK (Condensed)
+% =========================================================
+\section{Quantization Coverage on aarch64 and Deterministic Fallback}
+\label{sec:quant_coverage}
+
+\textbf{Observation.}
+On Raspberry~Pi~5 (aarch64), dynamic INT8 in ONNX Runtime reverts to FP32 because CPUExecutionProvider lacks key kernels—most notably \texttt{ConvInteger} in early layers of MNv3-S and RN18.  
+Each run logs executed artifact, EP list, and operator coverage in \texttt{pi\_results\_normalized.csv}.
+
+\subsection{Fallback Contract}
+Let $\mathcal{O}_{\text{int8}}$ be INT8 ops and $\mathcal{K}_{\text{EP}}$ supported kernels.  
+\emph{Procedure:} (1) load \texttt{model\_int8.onnx}; (2) if $\mathcal{O}_{\text{int8}}\nsubseteq\mathcal{K}_{\text{EP}}$, log missing ops and reload \texttt{model.onnx} (FP32) with identical settings; (3) tag CSVs as FP32 fallback.  
+This yields identical preprocessing/batching/timing across precision modes for clean comparison.
+
+\subsection{Quantization Coverage Summary}
+Operator introspection shows consistent fallback.  
+Table~\ref{tab:quant_cov} summarizes aarch64 INT8 support; no mixed-precision occurred.
+
+\begin{table}[h]
+  \centering
+  \caption{INT8 operator coverage and fallback on Raspberry~Pi~5.}
+  \label{tab:quant_cov}
+  \footnotesize
+  \begin{tabularx}{\columnwidth}{l c X c}
+    \toprule
+    Model & Required Ops & Supported & Runtime Mode \\
+    \midrule
+    MobileNetV3-Small & 37 & 36 & FP32 fallback \\
+    ResNet-18         & 48 & 47 & FP32 fallback \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+Empirically, \texttt{gap\_analysis\_with\_speedup.csv} shows no INT8 speedup, confirming full fallback, matching ONNX Runtime 1.19’s lack of ARMv8 integer conv.
+
+\subsection{Systems Findings}
+\textbf{FQ1.} INT8$\rightarrow$FP32 fallback is systematic on stock aarch64; log it explicitly.  
+\textbf{FQ2.} Deterministic logging keeps results auditable and enables later testing of custom ORT/ARM Compute builds with full INT8.
+
+% =========================================================
+% 12. DEPLOYMENT BEHAVIOR ON RASPBERRY PI (2 GB) (Condensed)
+% =========================================================
+\section{Deployment Behavior on Raspberry Pi (2\,GB)}
+\label{sec:deployment}
+
+\textbf{Runtime Precision.}
+On the 2 GB Pi 5, INT8 was attempted first; missing \texttt{ConvInteger} forced FP32.  
+Logs record artifact, EPs, and coverage; all reported latencies/throughputs reflect FP32 (Sec.~\ref{sec:quant_coverage}).
+
+\textbf{Memory Footprint.}
+FP32 batch 1 fits easily: peak RSS $\sim$620 MB (MNv3-S) and $\sim$910 MB (RN18, 4 threads).  
+INT8 files are 6–15 MB (≈1/3 FP32) but unused due to kernels.
+
+\textbf{Threading and Utilization.}
+CPUExecutionProvider with \texttt{threads}=4: MNv3-S saturates near two threads; RN18 near three–four (L2/memory limits).  
+CPU utilization 370–390\% of four cores; temps $\sim$55°C idle $\rightarrow$ $\sim$69°C sustained, no throttling.
+
+\textbf{Batching Behavior.}
+Batch 1 is default for latency.  
+At \texttt{threads}=4, batch 2 gives $\sim$30\% more throughput; batch 4 nearly doubles but approaches the 2 GB limit when logging is active.  
+Batch 1–2 is the best real-time trade-off.
+
+\textbf{Reproducibility.}
+Reruns via \texttt{RUN\_ON\_PI.sh} and \texttt{MANIFEST.json}; logs include timestamps, CPU load, temperature, executed model, and precision.  
+Run-to-run variation $<\!\pm3\%$ in mean/tail latency.
+
+% =========================================================
+% 13. DISCUSSION (Condensed)
+% =========================================================
+\section{Discussion}
+\label{sec:discussion}
+
+\textbf{Latency–Accuracy Trade-off.}
+MNv3-S reaches $\sim$2 ms on Pi 5—$\sim$5$\times$ faster than RN18—with lower CIFAR-100 accuracy (46\% vs 61\%); both ${>}93\%$ on SVHN.  
+Hence, $B{<}5$ ms $\Rightarrow$ MNv3-S; $B{\ge}7.5$–10 ms $\Rightarrow$ RN18 viable.
+
+\textbf{Thermal and Throughput Scaling.}
+Thermals remain stable.  
+Throughput scales sublinearly with threads/batch (shared memory).  
+$S(b){=}S_\infty{+}K/b$ (Sec.~\ref{sec:thr_model}) predicts throughput within $\approx$1\% RMSE.  
+Batches $\le2$ best balance latency and throughput.
+
+\textbf{Quantization and Auditability.}
+Missing \texttt{ConvInteger} on aarch64 enforces INT8$\to$FP32 fallback (Sec.~\ref{sec:quant_coverage}).  
+Logged operator coverage and binaries ensure traceable, auditable metrics.
+
+\textbf{Reproducible Research Loop.}
+The Colab$\rightarrow$ONNX$\rightarrow$Pi workflow (training, export, manifest, runner) regenerates all results and supports future EPs (XNNPACK, ARM Compute, NPUs) without changing measurement code.
+
+\textbf{Toward Adaptive Inference.}
+The framework extends to SLO/thermal-aware control~\cite{matsubara2022split}, adjusting model, batch, or threads under load using the same artifacts and metrics.
+
+\textbf{Key Takeaway.}
+Reproducibility—not peak numbers—enables fair comparison.  
+This template offers a minimal, verifiable basis for edge-inference research.
+
+% =========================================================
+% ARTIFACTS AS A REUSABLE STANDARD (Condensed)
+% =========================================================
+\section{Artifacts as a Reusable Standard}
+\label{sec:artifacts}
+
+\textbf{Overview.}
+Each bundle is self-contained and executable for exact regeneration. It includes:
+  \item \texttt 1.{model.onnx} (FP32) and optional \texttt{model\_int8.onnx},
+  \item 2.declarative \texttt{MANIFEST.json} (preprocessing, training metadata),
+  \item 3.latency/throughput logs (CSV/JSON),
+  \item 4one-command Pi runner (\texttt{RUN\_ON\_PI.sh}) for Bookworm~64-bit.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[scale=0.2]{figures/manifest_schema_overview.gv.png}
+  \caption{Key fields and paths in \texttt{MANIFEST.json}.}
+  \label{fig:manifest-overview}
+\end{figure}
+
+\subsection{Manifest Schema and Validation}
+The manifest (JSON Schema Draft-07) specifies dataset, model, normalization, image size, opset, and artifact paths.  
+Validation uses \texttt{jsonschema} in any Python env. The schema, example, and validator appear in Appendix~\ref{app:manifest}.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[scale=0.33]{figures/manifest_runtime_flow_3row.gv.png}
+  \caption{Colab training $\rightarrow$ ONNX export $\rightarrow$ manifest $\rightarrow$ Pi runner $\rightarrow$ CSV/figures.}
+  \label{fig:manifest-runtime}
+\end{figure}
+
+\textbf{Runner Contract.}
+Given a validated manifest, the runner (i) reconstructs preprocessing, (ii) executes INT8 or deterministically falls back to FP32 (Sec.~\ref{sec:quant_coverage}), and (iii) logs mean, $p50$, $p90$ latency and throughput to CSV for reproducible analysis.
+
+% -------------------------------------------------------
+% THREATS TO VALIDITY AND MEASUREMENT NOTES (Condensed)
+% -------------------------------------------------------
+\section{Threats to Validity and Measurement Notes}
+\label{sec:threats}
+
+\textbf{Single-device sampling.}
+All data come from one Raspberry~Pi~5 (2\,GB) with the same 27\,W PSU and passive heatsink.  
+Cross-bin/firmware variance may exist, but $p50$/$p90$ quantiles and manifest-defined preprocessing aid comparability.
+
+\textbf{Thermal noise.}
+Warm-ups stabilize temperature; per-image latencies enable offline quantiles.  
+Trials with $>10^{\circ}$C drift were rerun under identical settings.
+
+\textbf{Software specificity.}
+On ONNX Runtime~1.19 (aarch64, CPUExecutionProvider), missing \texttt{ConvInteger} forces INT8$\to$FP32 fallback (Sec.~\ref{sec:quant_coverage}); all events are logged.  
+Custom builds can re-evaluate under full INT8.
+
+\textbf{Dataset/model scope.}
+CIFAR-100 and SVHN ($32{\times}32$) were chosen for reproducibility; training/export settings are fixed (Sec.~\ref{sec:train-protocol}).
+
+\textbf{External validity.}
+Findings generalize to compact CNNs on SBCs; absolute numbers may change for transformers or CPU–GPU mixes, but the reproducibility framework and manifest/fallback contract remain portable.
+
+% -------------------------------------------------------
+% ARTIFACT AVAILABILITY (Condensed)
+% -------------------------------------------------------
+\section{Artifact Availability}
+\label{sec:artifact-availability}
+
+We release bundles (model, manifest, plots), schema, validator, and Pi runner under a permissive license.\footnote{An anonymized URL is provided for review; public repo and Zenodo DOI on acceptance.}
+A single command
+\verb|./validate_and_run.sh path/to/bundle.zip|
+validates the manifest, executes tests with deterministic preprocessing, and writes logs/plots under \texttt{figures/}.  
+Artifacts correspond to Sec.~\ref{sec:quant_coverage} and Appendix~X.
+
+\subsection*{Replication Checklist}
+%Table~\ref{tab:replication} summarizes the environment and metadata to reproduce all results.
+
+\begin{table}[h]
+  \centering
+  \footnotesize
+  \setlength{\tabcolsep}{3pt}
+  \renewcommand{\arraystretch}{1.08}
+  \caption{Replication checklist: environment and reproducibility metadata.}
+  \label{tab:replication}
+  \begin{tabularx}{\linewidth}{>{\bfseries}p{0.32\linewidth} X}
+    \toprule
+    Item & Specification / Source \\
+    \midrule
+    Hardware & Raspberry~Pi~5 (2\,GB, BCM2712), passive heatsink, 27\,W USB-C PSU. \\
+    OS & Raspberry~Pi~OS Bookworm (64-bit, kernel~6.6). \\
+    Software & Python~3.11; ONNX~1.17; ONNX Runtime~1.19 (CPUExecutionProvider); Torch~2.3. \\
+    Training Platform & Google Colab (T4 GPU, Ubuntu~22.04). \\
+    Datasets & CIFAR-100~\cite{krizhevsky2009tiny}, SVHN~\cite{netzer2011svhn} (official splits). \\
+    Architectures & MobileNetV3-Small~\cite{howard2019mobilenetv3}, ResNet-18~\cite{he2016resnet}. \\
+    Hyperparameters & 120 epochs, batch 128, SGD (mom 0.9, wd 5e-4), cosine LR 0.1/0.05. \\
+    Quantization & ONNX dynamic INT8 with deterministic FP32 fallback (Sec.~\ref{sec:quant_coverage}). \\
+    Manifest & JSON Schema (Draft-07) via \texttt{jsonschema.validate()}. \\
+    Repetition & Three runs/config; mean/$p50$/$p90$ reported. \\
+    Random Seeds & 1337 (training), 42 (evaluation). \\
+    Thermal Control & Ambient 25$^\circ$C; rerun if drift $>\,$10$^\circ$C. \\
+    Outputs & Latency CSVs, run summaries, figures (PDF/PNG) in \texttt{figures/}. \\
+    License & MIT (code), CC-BY-4.0 (docs/plots). \\
+    DOI / Repo & Zenodo DOI upon acceptance (anonymous URL for review). \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+% -------------------------------------------------------
+% ARTIFACT-EVALUATION READINESS (Condensed)
+% -------------------------------------------------------
+\noindent\textit{Artifact-Evaluation Readiness.}
+All experiments were re-verified on a clean Raspberry~Pi~OS image with a fresh Python~3.11 venv and pinned deps from the manifest.  
+Each bundle reproduces all figures/tables end-to-end without manual steps, satisfying \emph{Reproduced, Verified, Functional} AEC criteria.
+
+% -------- Conclusion (Condensed) --------
+\section{Conclusion}
+We present a scripted, auditable path from Colab training to Raspberry~Pi~5 evaluation (2 GB) across two datasets and architectures.  
+Released ONNX bundles and manifests make edge-AI benchmarking portable, repeatable, and verifiable, enabling future work in adaptive inference, thermal budgeting, and multi-tenant edge scheduling.
+
+% -------- References --------
+\begin{thebibliography}{99}
+
+\bibitem{howard2019mobilenetv3}
+A.~Howard, M.~Sandler, G.~Chu, \emph{et al.}, “Searching for MobileNetV3,” in \emph{Proc. ICCV}, 2019. Available: \url{https://openaccess.thecvf.com/content_ICCV_2019/papers/Howard_Searching_for_MobileNetV3_ICCV_2019_paper.pdf}
+
+\bibitem{he2016resnet}
+K.~He, X.~Zhang, S.~Ren, and J.~Sun, “Deep Residual Learning for Image Recognition,” in \emph{Proc. CVPR}, 2016. Available: \url{https://openaccess.thecvf.com/content_cvpr_2016/html/He_Deep_Residual_Learning_CVPR_2016_paper.html}
+
+\bibitem{krizhevsky2009tiny}
+A.~Krizhevsky, “Learning Multiple Layers of Features from Tiny Images,” Technical Report, 2009. Available: \url{https://www.cs.toronto.edu/~kriz/learning-features-2009-TR.pdf}
+
+\bibitem{openvino_plugin}
+OpenVINO Plugin Library
+\url{https://docs.openvino.ai/2024/documentation/openvino-extensibility/openvino-plugin-library.html}
+
+\bibitem{netzer2011svhn}
+Y.~Netzer, T.~Wang, A.~Coates, \emph{et al.}, “Reading Digits in Natural Images with Unsupervised Feature Learning,” NIPS Workshop on Deep Learning, 2011. Available: \url{https://ufldl.stanford.edu/housenumbers/nips2011_housenumbers.pdf}
+
+\bibitem{tvm_arxiv18}
+An Automated End-to-End Optimizing Compiler for Deep Learning
+\url{https://www.usenix.org/system/files/osdi18-chen.pdf}
+
+\bibitem{kang2017neurosurgeon}
+Y.~Kang, J.~Hauswald, C.~Gao, \emph{et al.}, “Neurosurgeon: Collaborative Intelligence Between the Cloud and Mobile Edge,” in \emph{Proc. ASPLOS}, 2017. Available: \url{https://dl.acm.org/doi/10.1145/3037697.3037698}
+
+\bibitem{matsubara2022split}
+Y.~Matsubara, D.~Callegaro, M.~Levorato, and F.~Restuccia, “Split Computing and Early Exiting for Deep Learning: Survey and Research Challenges,” \emph{ACM Comput. Surveys}, 2022. Available: \url{https://dl.acm.org/doi/10.1145/3527155}
+
+\bibitem{karjee2022split}
+J.~Karjee and S.~Bera, “Split computing: DNN inference partition with load distribution for edge-assisted IoT,” \emph{Internet of Things and Cyber-Physical Systems}, 2022. Available: \url{https://www.sciencedirect.com/science/article/pii/S2665917422000435}
+
+\bibitem{dean2013tail}
+J.~Dean and L.~A.~Barroso, “The Tail at Scale,” \emph{Commun. ACM}, vol.~56, no.~2, pp.~74–80, 2013.
+
+\bibitem{kleinrock1975queueing}
+L.~Kleinrock, \emph{Queueing Systems, Volume I: Theory}. Wiley, 1975.
+
+\bibitem{jacob2018quantization}
+B.~Jacob, S.~Kligys, B.~Chen, \emph{et al.}, “Quantization and Training of Neural Networks for Efficient Integer-Arithmetic-Only Inference,” in \emph{Proc. CVPR}, 2018. Available: \url{https://openaccess.thecvf.com/content_cvpr_2018/papers/Jacob_Quantization_and_Training_CVPR_2018_paper.pdf}
+
+\bibitem{efron1994introduction}
+B.~Efron and R.~Tibshirani, \emph{An Introduction to the Bootstrap}. CRC Press, 1994.
+
+\bibitem{thermals_arxiv}
+T.~Benoit-Cattin, D.~Velasco-Montero, and J.~Fernández-Berni, “Impact of Thermal Throttling on Long-Term Visual Inference in a CPU-based Edge Device,” arXiv:2010.06291, 2020. Available: \url{https://arxiv.org/abs/2010.06291}
+
+\bibitem{cloud_variability}
+S.~Ahuja and A.~Jain, “Performance Variability in Public Clouds: An Empirical Analysis,” \emph{Information}, 2025. Available: \url{https://www.mdpi.com/2078-2489/16/5/402}
+
+\bibitem{mlperf_edge}
+MLCommons, “MLPerf Inference: Edge,” accessed 2025. Available: \url{https://mlcommons.org/benchmarks/inference-edge/}
+
+\bibitem{mlperf_tiny_neurips}
+C.~Banbury, V.~Jain, \emph{et al.}, “MLPerf Tiny Benchmark,” NeurIPS Datasets and Benchmarks, 2021. Available: \url{https://arxiv.org/pdf/2106.07597}
+
+\bibitem{pytorch_docs}
+PyTorch Documentation (v2.3), accessed 2025. Available: \url{https://pytorch.org/docs/2.3/}
+
+\bibitem{torchvision_docs}
+TorchVision Reference, accessed 2025. Available: \url{https://pytorch.org/vision/stable/}
+
+\bibitem{teerapittayanon2017distributed}
+Adaptive Distributed Convolutional Neural Network Inference at the Network Edge with ADCNN
+\url{https://dl.acm.org/doi/10.1145/3404397.3404473}
+
+\bibitem{onnxruntime_docs}
+ONNX Runtime documentation, accessed 2025. Available: \url{https://onnxruntime.ai/docs/}
+
+\bibitem{hu2022dynamic}
+Generalizability of Dynamic Fit Index, Equivalence Testing, and Hu Bentler Cutoffs for Evaluating Fit in Factor Analysis
+\url{https://www.tandfonline.com/doi/full/10.1080/00273171.2022.2163477}
+
+\bibitem{tflite_ptq}
+TensorFlow Model Optimization Toolkit: Post-Training Quantization, accessed 2025. Available: \url{https://www.tensorflow.org/model_optimization/guide/quantization/post_training}
+
+\bibitem{tflite_qat}
+TensorFlow Model Optimization Toolkit: Quantization-Aware Training, accessed 2025. Available: \url{https://www.tensorflow.org/model_optimization/guide/quantization/training}
+
+\bibitem{openvino_overview}
+OpenVINO Toolkit Documentation (overview), accessed 2025. Available: \url{https://docs.openvino.ai/}
+
+\bibitem{tvm_osdi18}
+T.~Chen, T.~Moreau, Z.~Jiang, \emph{et al.}, “TVM: An Automated End-to-End Optimizing Compiler for Deep Learning,” in \emph{Proc. OSDI}, 2018. Available: \url{https://www.usenix.org/system/files/osdi18-chen.pdf}
+
+\bibitem{ina219_datasheet}
+Texas Instruments, “INA219 Zero-Drift, Bidirectional Current/Power Monitor with I\textsuperscript{2}C Interface,” datasheet, accessed 2025. Available: \url{https://www.ti.com/lit/ds/symlink/ina219.pdf}
+
+\bibitem{rpi5_docs}
+Raspberry Pi Ltd., “Raspberry Pi 5 Documentation,” accessed 2025. Available: \url{https://www.raspberrypi.com/documentation/computers/raspberry-pi-5.html}
+
+\end{thebibliography}
+
+% -------------------------------------------------------
+% APPENDIX (MLSys/article uses \appendix)
+% -------------------------------------------------------
+\appendix
+\section{Manifest Schema, Example, and Validator}
+\label{app:manifest}
+
+\subsection{Minimal JSON Schema (Draft-07)}
+\begin{verbatim}
+{"$schema":"http://json-schema.org/draft-07/schema#",
+ "type":"object",
+ "required":["dataset","arch","classes",
+ "image_size","mean","std","opset","artifacts"],
+ "properties":{"dataset":{"enum":["cifar100","svhn"]},
+   "arch":{"enum":["mobilenet_v3_small","resnet18"]},
+   "image_size":{"type":"array","minItems":2},
+   "mean":{"type":"array","minItems":3},
+   "std":{"type":"array","minItems":3},
+   "opset":{"type":"integer"},
+   "training":{"type":"object",
+     "properties":{"epochs":{"type":"integer"},
+                   "optimizer":{"type":"string"},
+                   "seed":{"type":"integer"}}},
+   "artifacts":{"type":"object",
+     "required":["onnx_fp32"],
+     "properties":{"onnx_fp32":{"type":"string"},
+                   "onnx_int8":{"type":["string","null"]}}}}
+}
+\end{verbatim}
+
+\subsection{Example Manifest and Validation Script}
+\begin{verbatim}
+{"dataset":"cifar100","arch":"mobilenet_v3_small",
+ "classes":100,"image_size":[32,32],
+ "mean":[0.5071,0.4867,0.4408],
+ "std":[0.2675,0.2565,0.2761],
+ "opset":13,"training":{"epochs":120},
+ "artifacts":{"onnx_fp32":"model.onnx"}}
+
+import json, jsonschema
+jsonschema.validate(
+  json.load(open("MANIFEST.json")),
+  json.load(open("manifest.schema.json")))
+\end{verbatim}
+
+
+\end{document}

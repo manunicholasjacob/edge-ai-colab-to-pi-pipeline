@@ -1,0 +1,106 @@
+\
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/qqplot_cifar100-mobilenet_v3_small-t4-b1_synthetic.pdf}
+  \caption{QQ plot of latency vs. fitted lognormal for cifar100 / mobilenet v3 small / t4 / b1 synthetic.}
+  \label{fig:qq_cifar100-mobilenet_v3_small-t4-b1_synthetic}
+\end{figure}
+
+
+\
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/qqplot_cifar100-resnet18-t4-b1_synthetic.pdf}
+  \caption{QQ plot of latency vs. fitted lognormal for cifar100 / resnet18 / t4 / b1 synthetic.}
+  \label{fig:qq_cifar100-resnet18-t4-b1_synthetic}
+\end{figure}
+
+
+\
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/qqplot_svhn-mobilenet_v3_small-t4-b1_synthetic.pdf}
+  \caption{QQ plot of latency vs. fitted lognormal for svhn / mobilenet v3 small / t4 / b1 synthetic.}
+  \label{fig:qq_svhn-mobilenet_v3_small-t4-b1_synthetic}
+\end{figure}
+
+
+\
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/qqplot_svhn-resnet18-t4-b1_synthetic.pdf}
+  \caption{QQ plot of latency vs. fitted lognormal for svhn / resnet18 / t4 / b1 synthetic.}
+  \label{fig:qq_svhn-resnet18-t4-b1_synthetic}
+\end{figure}
+
+
+\
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/cifar100_mobilenet_v3_small_confusion.png}
+  \caption{Confusion matrix for CIFAR100 MOBILENET V3 SMALL CONFUSION.}
+  \label{fig:conf_cifar100_mobilenet_v3_small_confusion}
+\end{figure}
+
+
+\
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/cifar100_resnet18_confusion.png}
+  \caption{Confusion matrix for CIFAR100 RESNET18 CONFUSION.}
+  \label{fig:conf_cifar100_resnet18_confusion}
+\end{figure}
+
+
+\
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/svhn_mobilenet_v3_small_confusion.png}
+  \caption{Confusion matrix for SVHN MOBILENET V3 SMALL CONFUSION.}
+  \label{fig:conf_svhn_mobilenet_v3_small_confusion}
+\end{figure}
+
+
+\
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/svhn_resnet18_confusion.png}
+  \caption{Confusion matrix for SVHN RESNET18 CONFUSION.}
+  \label{fig:conf_svhn_resnet18_confusion}
+\end{figure}
+
+
+\
+\begin{table}[t]
+  \centering
+  \caption{SLO feasibility by p90 latency. For each budget \(B\), we list the highest-accuracy feasible model per dataset.}
+  \label{tab:slo_feas}
+  \begin{tabular}{lc}
+    \toprule
+    Budget \(B\) (ms) & Choice(s) \\ \midrule
+    3 & cifar100: mobilenet_v3_small (p90=2.41 ms); svhn: mobilenet_v3_small (p90=2.39 ms) \\
+    5 & cifar100: mobilenet_v3_small (p90=2.41 ms); svhn: mobilenet_v3_small (p90=2.39 ms) \\
+    8 & cifar100: mobilenet_v3_small (p90=2.41 ms); svhn: mobilenet_v3_small (p90=2.39 ms) \\
+    10 & cifar100: mobilenet_v3_small (p90=2.41 ms); svhn: mobilenet_v3_small (p90=2.39 ms) \\
+    11 & cifar100: mobilenet_v3_small (p90=2.41 ms); svhn: mobilenet_v3_small (p90=2.39 ms) \\
+    12 & cifar100: resnet18 (p90=11.13 ms); svhn: resnet18 (p90=11.36 ms) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+
+\
+\begin{table}[t]
+  \centering
+  \caption{Throughput model: observed vs.\ predicted images/s using \(\hat\kappa\) per (dataset, arch).}
+  \label{tab:thr_model}
+  \begin{tabular}{l l r r r}
+    \toprule
+    Dataset & Arch & Threads & Observed & Predicted \\ \midrule
+    cifar100 & mobilenet_v3_small & 4 & 450.7 & nan \\
+    cifar100 & resnet18 & 4 & 93.7 & nan \\
+    svhn & mobilenet_v3_small & 4 & 456.2 & nan \\
+    svhn & resnet18 & 4 & 92.4 & nan \\
+    \bottomrule
+  \end{tabular}
+\end{table}

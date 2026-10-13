@@ -782,19 +782,7 @@ We welcome contributions in the following areas:
 \item Analysis tools (power modeling, thermal prediction)
 \end{itemize}
 
-Contribution guidelines are in \texttt{CONTRIBUTING.md}.
-
-\subsection{Educational Use}
-
-The software has been used in:
-
-\begin{itemize}
-\item Graduate course on ML Systems (University of Texas, Fall 2024)
-\item Tutorial at EdgeAI Workshop (co-located with MLSys 2025)
-\item Industry training on edge deployment best practices
-\end{itemize}
-
-Lecture materials and exercises are available in \texttt{docs/teaching/}.
+Contributions are accepted through GitHub issues and pull requests.
 
 %==========================================================
 % 7. ILLUSTRATIVE EXAMPLES
@@ -862,15 +850,6 @@ This software enables reproducible edge AI research by:
 \item Releasing validated artifacts for independent verification
 \end{itemize}
 
-Early adopters have used the pipeline to:
-
-\begin{itemize}
-\item Evaluate early exit strategies on Raspberry Pi~\cite{matsubara2022split}
-\item Study thermal-aware scheduling policies
-\item Benchmark custom ONNX Runtime execution providers
-\item Teach reproducible ML systems in academic courses
-\end{itemize}
-
 \subsection{Comparison with Existing Tools}
 
 Table~\ref{tab:tool-comparison} compares our software with related benchmarking frameworks.
@@ -921,8 +900,6 @@ Our contribution is the \emph{integration} of training, export, validation, depl
 \begin{itemize}
 \item \textbf{Repository:} \url{https://github.com/anonymous/edge-onnx-pipeline} (anonymized for review)
 \item \textbf{Zenodo DOI:} To be assigned upon acceptance
-\item \textbf{Documentation:} \url{https://edge-onnx-pipeline.readthedocs.io} (anonymized)
-\item \textbf{Docker image:} \texttt{docker pull anonymous/edge-onnx:v1.0}
 \end{itemize}
 
 \subsection{Licensing}
@@ -939,7 +916,7 @@ The repository will remain publicly available with the following support:
 
 \begin{itemize}
 \item \textbf{Repository:} Hosted on GitHub under MIT License
-\item \textbf{Documentation:} Installation guide, usage examples, and API reference included
+\item \textbf{Documentation:} Installation guide and usage examples in the README; architecture and reproducibility notes in \texttt{docs/}
 \item \textbf{Contributions:} Community contributions welcome via pull requests
 \item \textbf{Issues:} Bug reports and feature requests tracked via GitHub Issues
 \end{itemize}
@@ -1074,7 +1051,6 @@ This software enables reproducible edge AI research by providing a reference imp
 \item \textbf{Standardizes measurement}: Manifest-based contracts ensure consistent preprocessing across studies
 \item \textbf{Quantifies device gaps}: Oracle--device comparison reveals thermal and virtualization effects often ignored
 \item \textbf{Facilitates fair comparison}: Researchers can benchmark new methods against validated baselines
-\item \textbf{Accelerates research}: Pre-validated artifacts reduce setup time from weeks to hours
 \end{itemize}
 
 \subsection{Reuse Potential}

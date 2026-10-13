@@ -113,7 +113,7 @@ MLPerf Edge/Tiny~\cite{mlperf_edge,mlperf_tiny_neurips} standardize metrics but 
     \textbf{System/Approach} & \textbf{Hardware Class} & \textbf{Metric Focus} & \textbf{Runtime/Framework} & \textbf{Key Limitation} \\
     \midrule
     MLPerf Inference Edge~\cite{mlperf_edge} & SBC/Server & Lat., Acc., Energy & MLPerf harness & Closed workloads; limited artifacts \\
-    MLPerf Tiny~\cite{mlperf_tiny,mlperf_tiny_neurips} & MCU & Lat., Power & Custom harness & MCU-only; no dual context \\
+    MLPerf Tiny~\cite{mlperf_tiny_neurips} & MCU & Lat., Power & Custom harness & MCU-only; no dual context \\
     Neurosurgeon~\cite{kang2017neurosurgeon} & Mobile/Edge & Energy vs lat. & Custom runtime & No trace/artifact release \\
     TVM~\cite{tvm_osdi18,tvm_arxiv18} & Heterogeneous & Throughput & TVM stack & Kernel focus; limited chain \\
     \textbf{This work} & SBC + Cloud CPU & Lat., Thr., ThermalLoss, Speedup & ORT + Manifest/Runner & 2 datasets/models; NPUs future work \\

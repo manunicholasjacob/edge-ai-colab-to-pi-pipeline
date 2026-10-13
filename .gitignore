@@ -52,3 +52,13 @@ temp/
 # Figures (regenerated from analysis)
 # figures/*.pdf
 # figures/*.png
+
+# LaTeX build intermediates
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.out
+*.spl
+*.synctex.gz

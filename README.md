@@ -6,6 +6,17 @@
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
 [![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-1.19-green.svg)](https://onnxruntime.ai/)
 
+> **Status, October 2026.** This repository holds the manuscript source and PDF (`paper/`,
+> `main_softwarex.tex`, `main.tex`), the manifest schema (`manifest.schema.json`), the
+> environment files, the reuse examples, the design notes in `docs/` and the figures. The
+> pipeline source, trained models, result CSVs and tests that the sections below refer to
+> (`src/`, `models/`, `results/`, `experiments/`, `tests/`) are **not** in this repository, so
+> the commands under Quick Start and Reproducing Paper Results do not run as written. Read it
+> as a description of the design and the manuscript, not as a runnable artifact. The
+> measurement work that followed it, with raw data and analysis code, is in
+> [edge-llm-memory-wall](https://github.com/manunicholasjacob/edge-llm-memory-wall) and
+> [edge-cold-start-tax](https://github.com/manunicholasjacob/edge-cold-start-tax).
+
 ---
 
 ## Overview
@@ -155,18 +166,16 @@ After running experiments, the following files are generated:
 
 ```
 edge-ai-colab-to-pi-pipeline/
-├── paper/                  # Published paper (PDF)
-├── src/                    # Source code
-├── experiments/            # Experiment configurations
-├── models/                 # Pre-trained ONNX models
-├── results/                # Experimental results (CSV)
-├── figures/                # Generated plots (PDF/PNG)
-├── environment/            # Dependency specifications
-├── docs/                   # Documentation
-├── examples/               # Usage examples
-├── tests/                  # Unit tests
-├── LICENSE                 # MIT License
-└── README.md              # This file
+|-- paper/                  # manuscript PDF
+|-- main_softwarex.tex      # manuscript source (and main.tex, an earlier longer version)
+|-- manifest.schema.json    # JSON schema for the experiment manifest
+|-- validate_and_run.sh     # manifest validation, then a device run if a Pi is attached
+|-- docs/                   # architecture and reproducibility notes
+|-- environment/            # conda environment and pip requirements
+|-- examples/               # reuse scenarios (new model, new dataset, new hardware)
+|-- figures/, figures-2/    # manuscript figures
+|-- CITATION.cff
+`-- LICENSE                 # MIT
 ```
 
 ---
@@ -259,21 +268,8 @@ python src/pi_inference_runner.py --model models/mobilenetv3.onnx
 
 ## Performance Results
 
-### Latency (Raspberry Pi 5, batch=1, threads=4)
-
-| Model | Dataset | Mean Latency | p50 | p90 |
-|-------|---------|--------------|-----|-----|
-| MobileNetV3 | CIFAR-100 | 2.1 ms | 2.0 ms | 2.3 ms |
-| MobileNetV3 | SVHN | 2.1 ms | 2.0 ms | 2.3 ms |
-| ResNet-18 | CIFAR-100 | 10.5 ms | 10.3 ms | 11.2 ms |
-| ResNet-18 | SVHN | 10.6 ms | 10.4 ms | 11.3 ms |
-
-### Oracle-Device Gap
-
-| Model | Oracle (img/s) | Pi 5 (img/s) | Speedup | ThermalLoss |
-|-------|----------------|--------------|---------|-------------|
-| MobileNetV3 | 245.3 | 12.7 | 0.052 | 0.948 |
-| ResNet-18 | 189.4 | 8.3 | 0.044 | 0.956 |
+The latency and accuracy results are in the manuscript (`paper/main_softwarex.pdf`). The
+per-run result files behind them are not included in this repository.
 
 ---
 
@@ -281,35 +277,13 @@ python src/pi_inference_runner.py --model models/mobilenetv3.onnx
 
 - **Architecture**: See `docs/architecture.md` for detailed design
 - **Reproducibility**: See `docs/reproducibility.md` for step-by-step reproduction
-- **Installation**: See `docs/installation.md` for detailed setup instructions
-
----
-
-## Testing
-
-Run unit tests:
-
-```bash
-pytest tests/
-```
-
-Expected output: All tests pass (87% coverage)
 
 ---
 
 ## Citation
 
-If you use this software in your research, please cite:
-
-```bibtex
-@article{edge-ai-pipeline-2025,
-  title={Adaptive Edge-Cloud Inference with ONNX Deployment: A Reproducible Colab→Raspberry Pi Pipeline},
-  author={[Authors]},
-  journal={SoftwareX},
-  year={2025},
-  note={Submitted}
-}
-```
+Citation metadata is in [`CITATION.cff`](CITATION.cff) (GitHub's "Cite this repository" button
+uses it).
 
 ---
 
@@ -341,8 +315,6 @@ Contributions are welcome! Please:
 ## Support
 
 - **Issues**: Report bugs via [GitHub Issues](https://github.com/manunicholasjacob/edge-ai-colab-to-pi-pipeline/issues)
-- **Discussions**: Ask questions via [GitHub Discussions](https://github.com/manunicholasjacob/edge-ai-colab-to-pi-pipeline/discussions)
-- **Email**: [Contact for academic collaborations]
 
 ---
 
@@ -361,8 +333,3 @@ Contributions are welcome! Please:
 - [ONNX Model Zoo](https://github.com/onnx/models) - Pre-trained ONNX models
 - [TVM](https://tvm.apache.org/) - Deep learning compiler framework
 
----
-
-**Status**: ✅ Submission-ready for SoftwareX
-
-**Last Updated**: March 6, 2025
